@@ -1,4 +1,8 @@
 import { createOpenAPI } from 'fumadocs-openapi/server';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+
+const schemaDirectory = path.join(process.cwd(), '.source', 'openapi');
 
 function parseServicesEnv() {
   const raw = process.env.OPENAPI_SERVICES;
@@ -31,9 +35,17 @@ async function resolveAvailableInputs() {
             throw new Error(`HTTP ${response.status}`);
           }
 
+          const schemaPath = path.join(
+            schemaDirectory,
+            `${service.name.replace(/[^a-zA-Z0-9_-]/g, '-')}.json`,
+          );
+
+          await mkdir(schemaDirectory, { recursive: true });
+          await writeFile(schemaPath, await response.text(), 'utf8');
+
           return {
             ...service,
-            schema: await response.json(),
+            path: schemaPath,
           };
         })
     )
@@ -47,6 +59,6 @@ export const inputs = await resolveAvailableInputs();
 
 export const openapi = createOpenAPI({
   input: async () => Object.fromEntries(
-    inputs.map(({ name, schema }) => [name, schema]),
+    inputs.map(({ name, path: schemaPath }) => [name, schemaPath]),
   ),
 });
