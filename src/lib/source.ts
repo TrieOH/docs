@@ -9,7 +9,9 @@ const openapiFiles = {
   files: (
     await Promise.all(
       inputs.map((input) =>
-        openapiSource(createOpenAPI({ input: [input.url] }), {
+        openapiSource(createOpenAPI({
+          input: async () => ({ [input.name]: input.schema }),
+        }), {
           baseDir: `${input.name}/api`,
           groupBy: "tag",
           meta: { folderStyle: "folder" },

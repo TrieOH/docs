@@ -26,19 +26,27 @@ async function resolveAvailableInputs() {
   const results = await Promise.allSettled(
     services.map((service) =>
       fetch(service.url, { signal: AbortSignal.timeout(3000) })
-        .then((r) => {
-          if (!r.ok) throw new Error();
-          return service;
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          return {
+            ...service,
+            schema: await response.json(),
+          };
         })
     )
   );
-  return results
-    .filter((r): r is PromiseFulfilledResult<{ name: string; url: string }> => r.status === 'fulfilled')
-    .map((r) => r.value);
+  return results.flatMap((result) =>
+    result.status === 'fulfilled' ? [result.value] : []
+  );
 }
 
 export const inputs = await resolveAvailableInputs();
 
 export const openapi = createOpenAPI({
-  input: inputs.map(i => i.url),
+  input: async () => Object.fromEntries(
+    inputs.map(({ name, schema }) => [name, schema]),
+  ),
 });
