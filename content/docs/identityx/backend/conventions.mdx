@@ -1,0 +1,59 @@
+---
+title: Coding Conventions
+description: How IdentityX backend code is written — spec-first, features, envelope, authz.
+icon: CodeXml
+---
+
+## Spec-first development
+
+- `api-spec.yml` is the contract and the single source of truth. Every operation, schema, and error sentinel lives there.
+- Regenerate bindings after touching it: `just generate-oapi identityx` (writes `internal/openapi/*.gen.go`, not committed).
+- The embedded spec is served by the harness at `/docs/openapi.yml` — this site's API reference is that file.
+- Keep the spec's `info.description` current: devs read it as the API's landing page.
+
+## Feature layout
+
+One directory per feature under `internal/handlers/` (authn, projects, actors, api_keys, capabilities, oauth_providers, organizations, profiles, profile_schemas). Each feature owns its models, routes, and repos:
+
+- **routes** are registered in `internal/app/router.go`, wired to the strict-server bindings.
+- **authz** crosses `internal/authz` — `CheckProject`, `CheckOrg`, `CheckPlatform` — never inline role lookups in handlers.
+- **scopes** (`x-scope` in the spec, e.g. `platform-only`) are enforced as chain middleware; adding one is one spec line + one registry entry.
+
+## Response envelope
+
+Every handler returns the `fun.Response` envelope — success in `data`, failures as an `AppError`:
+
+```go
+// success
+SetResult(ctx, w, r, payload)
+// failure — sentinel maps to the HTTP status
+SetError(ctx, w, r, errx.ErrNotFound, nil)
+```
+
+- Use the shared `errx` sentinels (`ErrNotFound`, `ErrUnauthorized`, `ErrConflict`, …) — never raw `http.Error` with ad-hoc bodies.
+- **Never leak existence**: owner-only resources return `404`, not `403`.
+- Introspect-style flows must unwrap `data` — reading the envelope root yields a zeroed identity (the `00000000-…` owner bug).
+
+## Authentication model
+
+- Two credential kinds everywhere: Bearer JWT and `X-API-Key` (see the API reference intro).
+- Svc actors are project **users**, not members — don't `GetMember` on them; key creation relies on the caller's admin `CheckProject`.
+- Key lifecycle (`internal/keys`), token lifecycle (`internal/tokens`), and API-key auth (`lib/go/api_keys`) are shared modules — extend them, don't reimplement.
+
+## Database
+
+- Schema in `db/`, queries written for `sqlc` (`sqlc.yaml`) — generated code in `internal/sqlc`.
+- Repos in `internal/repos` own the query layer; handlers never touch sqlc directly.
+- Multi-row work that must be atomic goes in a transaction — e.g. project creation also provisions the project's keys in one tx.
+
+## Tests & quality
+
+- **Parity tests** in `internal/app` (e.g. `parity_test.go`) assert the router surface matches the spec — keep them green when adding routes.
+- `just identityx test` (gotestsum), `just identityx lint` (golangci-lint).
+- `lib/go/testdb` for DB-backed tests.
+
+## Don't
+
+- Don't reimplement HTTP serving, middleware, or telemetry — boot through `lib/go/httpserver`.
+- Don't return the envelope root as the payload — consumers unwrap `data`.
+- Don't store secrets in the spec or commit `.env`.

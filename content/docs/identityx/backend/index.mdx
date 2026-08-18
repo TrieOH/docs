@@ -1,0 +1,61 @@
+---
+title: Backend
+description: The IdentityX Go service — where it lives, how it's structured, how to run it.
+icon: Server
+---
+
+IdentityX is a Go service in the TheTree monorepo at **`api/identityx/`**. It's the platform's identity service: actors, projects, organizations, JWT issuance, API keys, OAuth, and profiles.
+
+## Stack
+
+| Layer | Choice |
+| --- | --- |
+| Language | Go (workspace module, `go.work`) |
+| HTTP | chi router via `oapi-codegen` (chi-server + strict-server) bindings |
+| Database | PostgreSQL, queries via `sqlc` |
+| Async jobs | river workers (key rotation, token cleanup) |
+| Observability | OpenTelemetry + prometheus via the shared harness |
+| Harness | `lib/go/httpserver` — server lifecycle, `/health`, `/metrics`, middleware stack |
+
+## Layout
+
+```text
+api/identityx/
+├── api-spec.yml          # the contract — single source of truth
+├── oapi-codegen.yaml     # codegen config
+├── sqlc.yaml
+├── internal/
+│   ├── app/              # wiring: router, auth dispatch, config
+│   ├── authz/            # who may touch what (CheckProject/Org/Platform)
+│   ├── handlers/         # one dir per feature: authn, projects, actors,
+│   │                     #   api_keys, capabilities, oauth_providers,
+│   │                     #   organizations, profiles, profile_schemas, …
+│   ├── repos/            # SQL repositories over the sqlc layer
+│   ├── services/         # business logic
+│   ├── sqlc/             # generated query code
+│   ├── openapi/          # generated oapi-codegen bindings (not committed)
+│   ├── keys/             # Ed25519/RSA key lifecycle
+│   ├── tokens/           # JWT mint/verify/rotate/revoke, action tokens
+│   ├── emails/           # email templates + sender
+│   └── jobs/             # river workers
+└── db/                   # schema + migrations
+```
+
+## Run it
+
+```bash
+docker compose up identityx        # → http://localhost:8080
+just identityx test                # or: cd api/identityx && just test
+just identityx lint
+```
+
+Env lives in `api/identityx/.env` (gitignored). Dropping the DB invalidates every API key and project id.
+
+## Spec-first
+
+`api-spec.yml` drives everything: the oapi-codegen bindings (`just generate-oapi`), the TypeScript client (`just generate-orval`), and these docs (the service serves the spec at `/docs/openapi.yml`). **Change the spec, then regenerate — never hand-edit generated code.**
+
+## Read next
+
+- [Coding conventions](/docs/identityx/backend/conventions)
+- [API reference](/docs/identityx/API/system/getHealth)

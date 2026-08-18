@@ -1,0 +1,55 @@
+---
+title: Backend
+description: The Payssage Go service — wallets, intents, webhooks. Where it lives, structure, run it.
+icon: Server
+---
+
+Payssage is a Go service in the TheTree monorepo at **`api/payssage/`** — the payments service: wallets (ownership units), sellers/collectors (provider accounts like Mercado Pago, connected via OAuth), payment intents, and the webhook pipeline that fans provider events out to tenant endpoints.
+
+## Stack
+
+| Layer | Choice |
+| --- | --- |
+| Language | Go (workspace module, `go.work`) |
+| HTTP | chi router via `oapi-codegen` (chi-server + strict-server) bindings |
+| Database | PostgreSQL, queries via `sqlc` |
+| Provider adapters | Mercado Pago module (webhook receiver, OAuth connect/callback) |
+| Observability | OpenTelemetry via the shared harness |
+| Harness | `lib/go/httpserver` |
+
+## Layout
+
+```text
+api/payssage/
+├── api-spec.yml          # the contract — single source of truth
+├── internal/
+│   ├── app/              # wiring: router, auth dispatch, config
+│   ├── handlers/         # one dir per feature: wallets, sellers,
+│   │                     #   collectors, intents, oauth, webhooks,
+│   │                     #   testmode, orgs, …
+│   ├── repos/            # SQL repositories over the sqlc layer
+│   ├── services/         # business logic
+│   ├── sqlc/             # generated query code
+│   └── openapi/          # generated oapi-codegen bindings (not committed)
+└── db/                   # schema + migrations
+```
+
+## Run it
+
+```bash
+docker compose up identityx -d         # auth dependency
+docker compose up payssage             # → http://localhost:8082
+just payssage test
+just payssage lint
+```
+
+Env lives in `api/payssage/.env` (gitignored). Test mode requires `TEST_MODE=true` — otherwise `/testmode/*` 503s.
+
+## Spec-first
+
+`api-spec.yml` drives everything: oapi-codegen bindings (`just generate-oapi`), the TS client (`just generate-orval`), and these docs (`/docs/openapi.yml`). **Change the spec, then regenerate — never hand-edit generated code.**
+
+## Read next
+
+- [Coding conventions](/docs/payssage/backend/conventions)
+- [API reference](/docs/payssage/API/system/getHealth)

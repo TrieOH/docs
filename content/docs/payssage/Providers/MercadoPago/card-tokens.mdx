@@ -1,17 +1,16 @@
 ---
-title: Mercado Pago
-description: Generate Mercado Pago card tokens in test and production environments
+title: Card Tokens
+description: Create Mercado Pago card tokens in test and production environments.
+icon: CreditCard
 ---
 
-# Mercado Pago card tokens
-
-Use this endpoint to create a Mercado Pago card token.
+A **card token** is a temporary, single-use representation of a card, created from card and cardholder information. It replaces the raw card number everywhere — including inside TrieOH: the [Univents checkout](https://univents.com.br) tokenizes cards in the browser with `@mercadopago/sdk-js` and sends only the token to the backend. This page documents the raw Mercado Pago API for reference and debugging.
 
 ## Test and production environments
 
 | Environment | Credentials | Card and cardholder data | Transactions |
 | --- | --- | --- | --- |
-| Test | Mercado Pago test credentials | Mercado Pago test cards and test payer data | Simulated; no real charge |
+| Test | Mercado Pago test credentials (`MP_TEST_ACCESS_TOKEN`, `MP_TEST_PUBLIC_KEY`) | Mercado Pago test cards and test payer data | Simulated; no real charge |
 | Production | Mercado Pago production credentials | Real card and cardholder data | Real payment; the cardholder may be charged |
 
 > In production, use production credentials and real card and cardholder data. The test values shown below are only for test mode.
@@ -54,7 +53,7 @@ Authorization: Bearer ACCESS_TOKEN
 | `cardholder` | object | Yes | Cardholder information. |
 | `cardholder.name` | string | Yes | Cardholder name. |
 | `cardholder.identification` | object | Yes | Cardholder identification document. |
-| `cardholder.identification.type` | string | Yes | Identification type. |
+| `cardholder.identification.type` | string | Yes | Identification type (e.g. `CPF`, `CNPJ`). |
 | `cardholder.identification.number` | string | Yes | Identification number. |
 
 ### Test request
@@ -94,3 +93,17 @@ The endpoint and request structure are the same in production. Replace the test 
 ```bash
 export MERCADO_PAGO_ACCESS_TOKEN="replace-with-production-access-token"
 ```
+
+---
+
+## In TrieOH (the frontend way)
+
+The raw API above is what the Mercado Pago SDK wraps. In our frontends (see [Univents checkout](https://univents.com.br)) the flow is:
+
+1. Load the SDK: `loadMercadoPago()` from `@mercadopago/sdk-js`.
+2. Create the instance with the **seller's public key** (from the event's `payssage_public_key`): `new window.MercadoPago(publicKey, { locale: "pt-BR" })`.
+3. Mount `mp.cardForm({ iframe: true, … })` — card number, expiry, and CVV live in Mercado Pago iframes and never touch your DOM state.
+4. On submit, `getCardFormData()` returns `{ token, issuerId, paymentMethodId, installments, identificationNumber, identificationType, cardholderEmail }`.
+5. Send `{ card_token, payment_method_id, installments, issuer_id, payer: { email, identification: { type, number } } }` to the checkout endpoint (Payssage intent).
+
+> Never send raw card numbers to TrieOH backends — only the token. Cards charge synchronously at checkout; Pix returns a QR code instead.

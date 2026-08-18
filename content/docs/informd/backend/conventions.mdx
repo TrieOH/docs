@@ -1,0 +1,56 @@
+---
+title: Coding Conventions
+description: How Informd backend code is written — namespaces, forms lifecycle, public routes.
+icon: CodeXml
+---
+
+## Spec-first development
+
+- `api-spec.yml` is the contract and the single source of truth.
+- Regenerate bindings after touching it: `just generate-oapi informd` (`internal/openapi/*.gen.go`, not committed).
+- The embedded spec is served at `/docs/openapi.yml` — this site's API reference is that file.
+
+## Feature layout
+
+One directory per feature under `internal/handlers/` (namespaces, forms, steps, fields, responses). Routes are registered in `internal/app/router.go`.
+
+## Two route shapes
+
+Most operations exist twice: on `/forms/...` (acting as the calling user) and on `/namespaces/{namespace_id}/forms/...` (scoped, acting on a namespace's form). Keep both in sync when adding behavior:
+
+- **Namespace routes require a JWT** (`jwt` only) — no API-key calls on `/namespaces...`.
+- `/forms/...` (non-namespaced) accepts either JWT or API key (`anyAuth`).
+
+## Public routes (no auth)
+
+Two routes are deliberately public — the answer view and the submission endpoint:
+
+- `GET /forms/{form_id}/asnwerable` — public answer view. **The spelling is part of the interface** ("asnwerable"); don't "fix" it in clients or specs.
+- `POST /forms/{form_id}/responses` — public submission.
+
+Public routes must not leak admin data (field definitions, member lists, internal ids that reveal structure beyond what the answer view needs).
+
+## Form lifecycle
+
+Forms move through drafted → open → closed → archived (and redrafted). The lifecycle ops are explicit: `open`, `close`, `archive`, `redraft`. Enforce transitions server-side — a closed form must not accept submissions (public POST included).
+
+## Response envelope & errors
+
+- Every response is the `fun.Response` envelope; failures are `AppError` with shared `errx` sentinels.
+- Owner/member-only operations return `404` for outsiders — no existence leak.
+- `GET /forms/{id}/responses/count` is a count endpoint; don't return full response payloads there.
+
+## Database
+
+- Schema in `db/`, sqlc queries in `internal/sqlc`, repos in `internal/repos`.
+
+## Tests & quality
+
+- Parity tests in `internal/app` keep the router surface in sync with the spec.
+- `just informd test` (gotestsum), `just informd lint` (golangci-lint).
+
+## Don't
+
+- Don't reimplement HTTP serving/telemetry — boot through `lib/go/httpserver`.
+- Don't rename the `asnwerable` route.
+- Don't return the envelope root as the payload.

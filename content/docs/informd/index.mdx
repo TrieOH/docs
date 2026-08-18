@@ -1,6 +1,54 @@
 ---
-title: Informd Overview
-description: Introduction to Informd service
+title: Overview
+description: Multi-tenant forms for TrieOH — namespaces, forms, steps, fields, responses.
+icon: ClipboardList
 ---
 
-Welcome to the Informd documentation.
+Informd is TrieOH's forms service: **namespaces** (tenant grouping), **forms**, **steps** (sections), **fields** (question definitions), and **responses** (submissions).
+
+## Call it
+
+| Environment | Base URL |
+| --- | --- |
+| Local | `http://localhost:8083` |
+| Prod | `https://api.trieoh.com/informd` (or `https://api.informd.trieoh.com`) |
+
+## Authentication
+
+| Scheme | Header | Notes |
+| --- | --- | --- |
+| Bearer JWT | `Authorization: Bearer <token>` | IdentityX access token; **required** for namespace routes |
+| API key | `X-API-Key: <key>` | IdentityX service key |
+
+Two routes are public (no auth):
+
+- `GET /forms/{form_id}/asnwerable` — public answer view
+- `POST /forms/{form_id}/responses` — public submission
+
+<Callout type="info" title="Spelling is part of the interface">
+The public answer view is `/forms/{form_id}/asnwerable` — note the historical spelling ("asnwerable"). It is intentional and part of the contract; don't "fix" it in clients.
+</Callout>
+
+## Key concepts
+
+| Concept | Meaning |
+| --- | --- |
+| Namespace | tenant grouping; owns forms and members |
+| Form | a survey; can be open/closed, drafted/archived |
+| Step | a section of a form, with an order |
+| Field | a question definition inside a step |
+| Response | one submission against a form |
+
+## Endpoint groups
+
+Browse each group in the sidebar:
+
+| Group | Covers |
+| --- | --- |
+| `namespaces` | create, members, form listing (JWT-only) |
+| `forms` | lifecycle (open/close/archive/redraft), members, public answer view, submission |
+| `steps` / `fields` | form structure, field options (`select`) |
+| `responses` | submissions, counts |
+| `system` | health, spec |
+
+Most operations exist in two shapes: on `/forms/...` (acting as the calling user) and on `/namespaces/{id}/forms/...` (scoped, acting on a namespace's form).

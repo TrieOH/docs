@@ -1,6 +1,94 @@
 ---
-title: IdentityX Overview
-description: Introduction to IdentityX service
+title: Overview
+description: Identity and authentication for the TrieOH platform — actors, projects, organizations, API keys, JWTs.
+icon: ShieldCheck
 ---
 
-Welcome to the IdentityX documentation.
+IdentityX is the platform's identity/tenant service. Every other backend (Univents, Payssage, Informd) bootstraps its own project here and authenticates with a **service API key** owned by a `svc` actor.
+
+## What it does
+
+- **Actors** — humans, services, and machines; everything that can authenticate.
+- **Organizations & Projects** — multi-tenant scoping; projects are workspaces under an organization.
+- **Auth** — register/login, Ed25519-signed JWTs, refresh/rotate/logout, JWKS at `/.well-known/jwks.json`.
+- **API keys** — server-to-server credentials (`{brand}_v1_{env}_{random}`); the raw key is returned once at creation.
+- **OAuth providers** — Google/GitHub login flows per project.
+- **Profiles & profile schemas** — versioned public identity shapes per project/platform.
+
+## Call it
+
+| Environment | Base URL |
+| --- | --- |
+| Local | `http://localhost:8080` |
+| Prod | `https://api.trieoh.com/identityx` (or `https://api.identityx.com.br`) |
+
+## Authentication
+
+Register or login a user, then send the token as a Bearer header:
+
+```bash
+curl -s -X POST "http://localhost:8080/auth/login?project_id=$PROJECT_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"dev@trieoh.com","password":"..."}' | jq .data.access_token
+```
+
+Two credential kinds are accepted everywhere:
+
+| Scheme | Header | Notes |
+| --- | --- | --- |
+| Bearer JWT | `Authorization: Bearer <token>` | Ed25519-signed; carries `subject.id` |
+| API key | `X-API-Key: <key>` | Server-to-server; resolve with `GET /auth/introspect` |
+
+## Key concepts
+
+| Concept | Meaning |
+| --- | --- |
+| Actor | human / service / machine identity |
+| Project user | actor scoped to a project (no role row) |
+| Project member | actor with a `project_members` role (owner / admin / member) |
+| Organization | top-level tenant; projects can be org-scoped |
+| API key | bound to a subject actor; hash stored, raw returned once |
+
+## Endpoint groups
+
+Browse each group in the sidebar:
+
+| Group | Covers |
+| --- | --- |
+| `authn` | setup, register, login, refresh, logout, introspect, JWKS, email verification |
+| `projects` / `organizations` | tenant and workspace management |
+| `actors` | project users and svc accounts |
+| `apikeys` | create/list/revoke service API keys |
+| `capabilities` | capability registry; keys can be scoped to capabilities |
+| `oauthproviders` | configure Google/GitHub and run the connect/callback flow |
+| `profiles` / `profile_schemas` | public identity and its JSON schema |
+| `system` | health, spec |
+
+## Bootstrap a fresh environment
+
+Do this in order — the first account is the platform super admin:
+
+```bash
+# 1. First account (succeeds once)
+curl -s -X POST /auth/setup -d '{"email":"admin@trieoh.com","password":"Admin123#"}'   # → $ADMIN_JWT
+
+# 2. One project per service
+curl -s -X POST /projects -H "Authorization: Bearer $ADMIN_JWT" \
+  -d '{"name":"Univents","brand_slug":"univents","domain":"https://univents.com.br"}'   # → $PROJECT_ID
+
+# 3. A svc account actor in that project
+curl -s -X POST /projects/$PROJECT_ID/actors -H "Authorization: Bearer $ADMIN_JWT" \
+  -d '{"auth_method":"api_key","type":"service","email":"univents-svc@trieoh.com"}'     # → $SVC_ACTOR_ID
+
+# 4. The service API key ON that actor (caller must be a project admin)
+curl -s -X POST /projects/$PROJECT_ID/api_keys -H "Authorization: Bearer $ADMIN_JWT" \
+  -d '{"subject_id":"$SVC_ACTOR_ID","name":"univents-svc-key","env":"production"}'       # → data.raw_key (once!)
+```
+
+<Callout type="warning" title="Gotchas">
+- Always read `data` from the response envelope — a zeroed identity (`owner_id 00000000-…`) is the classic symptom of reading the envelope root.
+- The API-key route is `/projects/{id}/api_keys` (underscore) — `/api-keys` 404s.
+- Svc actors are project **users**, not members — don't `GetMember` on them.
+- `POST /auth/setup` must run before other services boot; they panic "please setup IDX first" otherwise.
+- Dropping the IdentityX DB invalidates every API key and project id — recreate and re-point envs.
+</Callout>

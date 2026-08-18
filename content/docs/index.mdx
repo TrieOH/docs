@@ -1,31 +1,73 @@
 ---
-title: Hello World
-description: Your favourite docs framework.
-icon: Rocket
+title: Overview
+description: API reference and developer guides for the TrieOH platform services.
+icon: Compass
 ---
 
-Hey there! Fumadocs is a docs framework that works on Waku!
+TrieOH is a multi-service platform: four Go backends, each with its own OpenAPI 3.1 contract, all sharing one identity and tenant model.
 
-## Heading
+Every service's reference below is **generated from the OpenAPI spec the service itself serves** (`/docs/openapi.yml`) — the docs always match the deployed contract.
 
-Hello World!
+## Services
 
-<Cards>
-  <Card title="Learn more about Waku" href="https://waku.gg" />
-  <Card title="Learn more about Fumadocs" href="https://fumadocs.dev" />
-</Cards>
+| Service | Local | What it does | Guide |
+| --- | --- | --- | --- |
+| IdentityX | `http://localhost:8080` | Identity & tenants — actors, projects, organizations, JWTs, API keys, OAuth, profiles | [IdentityX](/docs/identityx) |
+| Univents | `http://localhost:8081` | Events, editions, ticketing, products, programs, badges & certifications, store | [Univents](/docs/univents) |
+| Payssage | `http://localhost:8082` | Payments — wallets, sellers, intents, provider OAuth, webhooks, test mode | [Payssage](/docs/payssage) |
+| Informd | `http://localhost:8083` | Multi-tenant forms — namespaces, forms, steps, fields, responses | [Informd](/docs/informd) |
 
-### CodeBlock
+In production the services are reachable through the gateway at `https://api.trieoh.com/{service}`.
 
-```ts
-console.log('Hello World');
+## Authentication
+
+Every backend authenticates with credentials issued by **IdentityX**:
+
+| Scheme | Header | Use for |
+| --- | --- | --- |
+| Bearer JWT | `Authorization: Bearer <token>` | End-user calls (issued by `/auth/login` or OAuth) |
+| API key | `X-API-Key: <key>` | Server-to-server calls (created in the service's IdentityX project) |
+
+## Response envelope
+
+Every JSON response (except IdentityX's raw JWKS) is the shared `fun.Response` envelope:
+
+```json
+{
+  "code": 200,
+  "message": "",
+  "data": {},
+  "error": null,
+  "pagination": null,
+  "timestamp": "2026-01-01T12:00:00Z",
+  "module": "IdentityX"
+}
 ```
 
-#### Table
+- Success: the payload lives in `data`.
+- Failure: `error` is an `AppError` — `{ "code", "message", "fields", "meta" }`, and `data` is absent. The `code` sentinel maps to the HTTP status (e.g. `UNAUTHORIZED` → 401).
 
-| Head                            | Description                         |
-| ------------------------------- | ----------------------------------- |
-| `hello`                         | Hello World                         |
-| very **important**              | Hey                                 |
-| _Surprisingly_                  | Fumadocs                            |
-| very long text that looks weird | hello world hello world hello world |
+Always read `data`, not the envelope root.
+
+<Cards>
+  <Card
+    title="IdentityX"
+    description="Identity, auth, tenants, API keys"
+    href="/docs/identityx"
+  />
+  <Card
+    title="Univents"
+    description="Events, ticketing, certifications, store"
+    href="/docs/univents"
+  />
+  <Card
+    title="Payssage"
+    description="Wallets, intents, webhooks, test mode"
+    href="/docs/payssage"
+  />
+  <Card
+    title="Informd"
+    description="Namespaces, forms, steps, responses"
+    href="/docs/informd"
+  />
+</Cards>

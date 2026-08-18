@@ -2,7 +2,9 @@
   "title": "Payssage",
   "pages": [
     "index",
-    "mercado-pago",
-    "api"
+    "Providers",
+    "API",
+    "backend",
+    "frontend"
   ]
 }

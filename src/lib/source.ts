@@ -12,7 +12,7 @@ const openapiFiles = {
         openapiSource(createOpenAPI({
           input: async () => ({ [input.name]: input.path }),
         }), {
-          baseDir: `${input.name}/api`,
+          baseDir: `${input.name}/API`,
           groupBy: "tag",
           meta: { folderStyle: "folder" },
         }),

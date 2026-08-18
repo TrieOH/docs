@@ -1,0 +1,53 @@
+---
+title: Backend
+description: The Informd Go service — multi-tenant forms. Where it lives, structure, run it.
+icon: Server
+---
+
+Informd is a Go service in the TheTree monorepo at **`api/informd/`** — the multi-tenant forms service: namespaces (tenant grouping), forms, steps (sections), fields (question definitions), and responses (submissions).
+
+## Stack
+
+| Layer | Choice |
+| --- | --- |
+| Language | Go (workspace module, `go.work`) |
+| HTTP | chi router via `oapi-codegen` (chi-server + strict-server) bindings |
+| Database | PostgreSQL, queries via `sqlc` |
+| Observability | OpenTelemetry via the shared harness |
+| Harness | `lib/go/httpserver` |
+
+## Layout
+
+```text
+api/informd/
+├── api-spec.yml          # the contract — single source of truth
+├── internal/
+│   ├── app/              # wiring: router, auth dispatch, config
+│   ├── handlers/         # one dir per feature: namespaces, forms,
+│   │                     #   steps, fields, responses, …
+│   ├── repos/            # SQL repositories over the sqlc layer
+│   ├── services/         # business logic
+│   ├── sqlc/             # generated query code
+│   └── openapi/          # generated oapi-codegen bindings (not committed)
+└── db/                   # schema + migrations
+```
+
+## Run it
+
+```bash
+docker compose up identityx -d         # auth dependency
+docker compose up informd              # → http://localhost:8083
+just informd test
+just informd lint
+```
+
+Env lives in `api/informd/.env` (gitignored).
+
+## Spec-first
+
+`api-spec.yml` drives everything: oapi-codegen bindings (`just generate-oapi`), the TS client (`just generate-orval`), and these docs (`/docs/openapi.yml`). **Change the spec, then regenerate — never hand-edit generated code.**
+
+## Read next
+
+- [Coding conventions](/docs/informd/backend/conventions)
+- [API reference](/docs/informd/API/system/getHealth)

@@ -1,0 +1,20 @@
+---
+title: Stripe
+description: Stripe payment provider — coming soon.
+icon: Clock
+---
+
+<Callout type="info" title="Coming soon">
+Stripe is not wired up yet. This page is a placeholder for when the provider lands.
+</Callout>
+
+## What to expect
+
+Payssage's provider layer is provider-agnostic — a provider plugs in as an adapter and immediately gets:
+
+- **OAuth connect/callback** — `GET /providers/stripe/connect` → consent → `callback` creates the seller on the wallet (no create-seller API).
+- **Checkout intents** — `POST /wallets/{wallet_id}/checkout` with `payment_method` for the new provider.
+- **Webhook receiver** — `POST /webhooks/stripe`, signature-verified, normalized into the standard webhook envelope and fanned out to tenant endpoints.
+- **Test mode** — sandbox credentials + `POST /testmode/intents/create`.
+
+When Stripe lands, this section will document its configuration env vars, checkout specifics (e.g. payment intents vs setup intents), webhook signature verification, and any frontend SDK integration — mirroring the [Mercado Pago guide](/docs/payssage/Providers/MercadoPago).

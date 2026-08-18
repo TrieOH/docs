@@ -1,0 +1,87 @@
+---
+title: Mercado Pago
+description: How Mercado Pago plugs into Payssage — OAuth connect, checkout, webhooks, test mode, card tokenization.
+icon: Landmark
+---
+
+Mercado Pago is the first payment provider integrated with Payssage. The provider works as a **seller/collector on a wallet**: connected via OAuth, then used by checkout intents (Pix and credit card).
+
+## Where it fits in the stack
+
+<Mermaid
+  code={`
+sequenceDiagram
+  autonumber
+  participant FE as Frontend (browser)
+  participant PS as Payssage
+  participant MP as Mercado Pago
+
+  Note over FE,MP: 1. Connect (OAuth)
+  FE->>PS: GET /providers/mercadopago/connect
+  PS->>MP: redirect to consent screen
+  MP-->>PS: callback with code + state
+  Note over PS: seller created on the wallet
+
+  Note over FE,MP: 2. Checkout
+  FE->>PS: POST /wallets/\${id}/checkout (Pix or card token)
+  PS->>MP: create payment intent
+  MP-->>PS: payment.* webhook event
+  PS-->>FE: intent status update
+`}
+/>
+
+## Configuration (payssage `.env`)
+
+| Env | Purpose |
+| --- | --- |
+| `MP_CLIENT_ID` / `MP_CLIENT_SECRET` | the Mercado Pago app credentials for OAuth |
+| `MP_ACCESS_TOKEN` | production access token |
+| `MP_REDIRECT_URI` | OAuth redirect URL (must match the MP app) |
+| `MP_WEBHOOK_SECRET` | secret used to verify `X-Mercado-Signature` on webhook calls |
+| `MP_TEST_ACCESS_TOKEN` / `MP_TEST_PUBLIC_KEY` | test-mode credentials (sandbox) |
+
+## How a connection is made
+
+1. **Connect** — `GET /providers/mercadopago/connect` starts the OAuth flow and redirects the browser to Mercado Pago's consent screen.
+2. **Callback** — `GET /providers/mercadopago/callback?code=…&state=…` completes the flow. The seller is **created here** — there is no create-seller API; a seller only exists after a successful OAuth connection.
+3. **Revoke** — `GET /providers/mercadopago/revoke` disconnects. The wallet itself stays.
+
+The seller's **provider public key** is then stored on the consuming entity (e.g. Univents stores it on the event as `events.payssage_public_key` / `events.payssage_seller_id`), so the frontend can initialize the Mercado Pago SDK for card tokenization.
+
+## Checkout
+
+`POST /wallets/{wallet_id}/checkout` with `payment_method` set:
+
+- **Pix** — returns the QR code (and copy-paste code) in `provider_data`. Paid asynchronously; the webhook confirms.
+- **Credit card** — charges synchronously. The frontend sends a **card token** (never raw card numbers) plus `payment_method_id`, `installments`, `issuer_id`, and payer identification.
+
+## Webhooks
+
+Mercado Pago calls `POST /webhooks/mercadopago` with `payment.*` events. Payssage:
+
+1. Verifies the signature using `MP_WEBHOOK_SECRET`.
+2. Normalizes the event into the standard webhook envelope (see the [Payssage overview](/docs/payssage) — `intent_id`, `event_type`, `payload`, …).
+3. Fans it out to the tenant's webhook endpoints (HMAC-signed, retried up to 5×).
+
+## Test mode
+
+With `TEST_MODE=true` in the payssage env, use the `MP_TEST_*` credentials:
+
+- `POST /testmode/intents/create` hard-creates an intent with a chosen status (e.g. `succeeded`) so downstream flows observe the webhook without a real payment.
+- Mercado Pago **test cards** and test payer data work against the sandbox — see [Card tokens](/docs/payssage/Providers/MercadoPago/card-tokens).
+
+## Frontend
+
+Card tokenization happens **in the browser** via [`@mercadopago/sdk-js`](https://github.com/mercadopago/sdk-js), using the seller's public key:
+
+- `loadMercadoPago()` → `new window.MercadoPago(publicKey, { locale: "pt-BR" })`
+- `mp.cardForm({ iframe: true, form: { … } })` — secure iframe fields for card number, expiry, CVV
+- `getCardFormData()` → `{ token, issuerId, paymentMethodId, installments, … }` — the token goes to the checkout payload; the card number never touches your servers.
+
+The detailed token tutorial lives on the [Card tokens](/docs/payssage/Providers/MercadoPago/card-tokens) page.
+
+## Official docs
+
+- [Credentials](https://www.mercadopago.com.br/developers/en/docs/your-integrations/credentials)
+- [Test cards](https://www.mercadopago.com.br/developers/en/docs/checkout-api-orders/integration-test/cards)
+- [Card token API](https://www.mercadopago.com.br/developers/en/docs/checkout-api-orders/card-tokenization)

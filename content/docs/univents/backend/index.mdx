@@ -1,0 +1,58 @@
+---
+title: Backend
+description: The Univents Go service — events, ticketing, the store. Where it lives, structure, run it.
+icon: Server
+---
+
+Univents is a Go service in the TheTree monorepo at **`api/univents/`** — the events service: events & editions, ticket types, products, programs, registrations, badges, certifications, signatures, and the store (purchases paid through Payssage).
+
+## Stack
+
+| Layer | Choice |
+| --- | --- |
+| Language | Go (workspace module, `go.work`) |
+| HTTP | chi router via `oapi-codegen` (chi-server + strict-server) bindings |
+| Database | PostgreSQL, queries via `sqlc` |
+| Async jobs | river workers (purchase expiry/confirm, emissions) |
+| Payments | Payssage intents via the platform wallet + webhook receiver |
+| Observability | OpenTelemetry via the shared harness |
+| Harness | `lib/go/httpserver` |
+
+## Layout
+
+```text
+api/univents/
+├── api-spec.yml          # the contract — single source of truth
+├── internal/
+│   ├── app/              # wiring: router, auth dispatch, config
+│   ├── handlers/         # one dir per feature: events, editions,
+│   │                     #   ticket_types, products, programs, purchases,
+│   │                     #   checkouts, badges, certifications, signatures,
+│   │                     #   realtime, webhooks, …
+│   ├── repos/            # SQL repositories over the sqlc layer
+│   ├── services/         # business logic
+│   ├── sqlc/             # generated query code
+│   ├── openapi/          # generated oapi-codegen bindings (not committed)
+│   └── jobs/             # river workers
+└── db/                   # schema + migrations
+```
+
+## Run it
+
+```bash
+docker compose up identityx payssage -d   # deps first (auth + payments)
+docker compose up univents                # → http://localhost:8081
+just univents test
+just univents lint
+```
+
+Env lives in `api/univents/.env` (gitignored): `IDENTITY_X_*`, `PAYSSAGE_WALLET_ID`, `PAYSSAGE_WEBHOOK_SECRET`, `PAYSSAGE_API_KEY`.
+
+## Spec-first
+
+`api-spec.yml` drives everything: oapi-codegen bindings (`just generate-oapi`), the TS client (`just generate-orval`), and these docs (`/docs/openapi.yml`). **Change the spec, then regenerate — never hand-edit generated code.**
+
+## Read next
+
+- [Coding conventions](/docs/univents/backend/conventions)
+- [API reference](/docs/univents/API/system/getHealth)

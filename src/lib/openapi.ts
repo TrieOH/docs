@@ -35,9 +35,20 @@ async function resolveAvailableInputs() {
             throw new Error(`HTTP ${response.status}`);
           }
 
+          // Services serve their OpenAPI spec as YAML at /docs/openapi.yml.
+          // json-schema-ref-parser (used by fumadocs-openapi) picks the
+          // parser from the file extension, so keep the source format.
+          const ext = response.headers
+            .get('content-type')
+            ?.includes('yaml')
+            ? '.yml'
+            : service.url.endsWith('.yml') || service.url.endsWith('.yaml')
+              ? '.yml'
+              : '.json';
+
           const schemaPath = path.join(
             schemaDirectory,
-            `${service.name.replace(/[^a-zA-Z0-9_-]/g, '-')}.json`,
+            `${service.name.replace(/[^a-zA-Z0-9_-]/g, '-')}${ext}`,
           );
 
           await mkdir(schemaDirectory, { recursive: true });

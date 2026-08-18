@@ -1,0 +1,7 @@
+{
+  "title": "Providers",
+  "pages": [
+    "MercadoPago",
+    "Stripe"
+  ]
+}

@@ -1,0 +1,68 @@
+---
+title: Coding Conventions
+description: How Payssage backend code is written — wallets, intents, webhooks, testmode.
+icon: CodeXml
+---
+
+## Spec-first development
+
+- `api-spec.yml` is the contract and the single source of truth.
+- Regenerate bindings after touching it: `just generate-oapi payssage` (`internal/openapi/*.gen.go`, not committed).
+- The embedded spec is served at `/docs/openapi.yml` — this site's API reference is that file.
+
+## Feature layout
+
+One directory per feature under `internal/handlers/` (wallets, sellers, collectors, intents, oauth, webhooks, testmode, orgs). Routes are registered in `internal/app/router.go`.
+
+## Wallet model & ownership
+
+- Wallets are ownership units: `owner_id`, optional `organization_id`, `sandbox`, `fee_bps` (500 = 5%).
+- `CheckWalletAccess` requires the caller to be the wallet owner (or an org member of an org-scoped wallet).
+- **The platform wallet is owned by the payssage svc actor** — it's created with the **service API key**, not a user JWT. Univents' boot check calls `GetWallet` with the service key and fails fast if it's missing.
+- Sellers/collectors are provider accounts bound to a wallet; they are **created only via the provider OAuth callback** — there is no create-seller API. Don't add one; seed the table for local e2e.
+
+## Intents
+
+- `POST /wallets/{wallet_id}/checkout` creates a payment attempt. Statuses: `pending | processing | succeeded | cancelled | failed | rejected | refunded`.
+- State transitions come from the **provider webhook**, not from guesswork — a `succeeded` intent that never received the webhook should not be trusted.
+- Test mode: `POST /testmode/intents/create` hard-creates an intent with a chosen status (e.g. `succeeded`) so downstream flows observe the webhook without a real provider.
+
+## Webhooks
+
+- The provider calls `POST /webhooks/{provider}`; Payssage normalizes the event into the D2 envelope and fans it out to tenant endpoints:
+
+```json
+{ "intent_id": "...", "wallet_id": "...", "provider": "mercadopago",
+  "external_id": "<provider_payment_id>", "event_type": "payment.succeeded",
+  "payload": { "...": "raw provider payload" } }
+```
+
+- Deliveries are signed: `X-Payssage-Signature` = hex(HMAC-SHA256(raw body, endpoint secret)). The endpoint secret is returned **once** when the webhook endpoint is created — consumers must store it.
+- Non-2xx deliveries are retried up to 5×. Don't swallow signature failures.
+
+## Response envelope & errors
+
+- Every response is the `fun.Response` envelope; failures are `AppError` with shared `errx` sentinels.
+- An API-key identity must come from unwrapping the introspect envelope (`data.subject`) — reading the envelope root zeroes the identity and every wallet created that way gets `owner_id = 00000000-…`.
+
+## Auth: two kinds of callers
+
+- **User JWT** — bearerAuth routes (most wallet/intent/org ops).
+- **Service API key** — `X-API-Key` accepted on wallet create/get/fee, sandbox, webhook endpoints, and testmode, so the platform can manage the wallet with the service key alone.
+- Only `POST /webhooks/{provider}` and `GET /providers/{provider}/callback` are unauthenticated.
+
+## Database
+
+- Schema in `db/`, sqlc queries in `internal/sqlc`, repos in `internal/repos`.
+
+## Tests & quality
+
+- Parity tests in `internal/app` keep the router surface in sync with the spec.
+- `just payssage test` (gotestsum), `just payssage lint` (golangci-lint).
+- Sandbox is **PATCH**, not POST — `setWalletSandbox` returns 405 on POST; the parity tests catch regressions.
+
+## Don't
+
+- Don't reimplement HTTP serving/telemetry — boot through `lib/go/httpserver`.
+- Don't create sellers outside the OAuth callback.
+- Don't return the envelope root as the payload.

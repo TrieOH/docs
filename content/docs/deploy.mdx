@@ -1,0 +1,75 @@
+---
+title: Deploy
+description: How TrieOH ships — TheTree builds images, Forgejo Actions + Dagger publishes them, the server runs them, Cloudflare Pages hosts the frontends and docs.
+icon: Rocket
+---
+
+TrieOH is self-hosted on a single server (`trieoh@main`) with plain Docker Compose — no Swarm, no Kubernetes. The pipeline is split across three places:
+
+| Piece | Repo | What it does |
+| --- | --- | --- |
+| Build & publish | `TrieOH/TheTree` | CI on Forgejo Actions; tags trigger image builds via Dagger and push to the Forgejo container registry |
+| Run | `TrieOH/deploy` | production `compose.yml` that runs the published images on the server |
+| Static hosts | Cloudflare Pages | frontends (`front/*`) and this docs site |
+
+## Backend pipeline
+
+<Mermaid
+  code={`
+flowchart LR
+  subgraph TheTree [TheTree monorepo]
+    A["git push tag\\nidentityx/v0.35.3"] --> B["Forgejo Actions\\n(dind runner, one publish at a time)"]
+    B --> C["Dagger publish\\n.dagger module"]
+  end
+  C --> D[("Forgejo container registry\\ngit.trieoh.com/trieoh/identityx:v0.35.3")]
+  D --> E["Server: ~/deploy/thetree\\ndocker compose up -d --no-deps"]
+  E --> F["Caddy gateway\\napi.trieoh.com/identityx"]
+`}
+/>
+
+1. **Push a tag** matching `*/v*` — e.g. `identityx/v0.35.3`.
+2. **Forgejo Actions** (the `publish.yml` workflow, concurrency-grouped so tag pushes queue instead of running in parallel against the shared DinD) runs the **Dagger module** (`.dagger/`) to build and push the image to the **Forgejo container registry** (`git.trieoh.com/trieoh/<svc>:<tag>`), authenticated with `FJ_USER` / `FJ_TOKEN` secrets.
+3. The server pulls the new tag and adopts it:
+   ```bash
+   cd ~/deploy/thetree
+   docker compose up -d --no-deps
+   ```
+   Idempotent — container names, volumes and networks are pinned; the stack name `thetree` must never change.
+
+Images are pinned by tag in `deploy/thetree/compose.yml`. **Bumping a version = edit the tag, commit, redeploy** — git history is the version ledger. **Rollback** = `git checkout <prev> -- compose.yml && docker compose up -d`.
+
+## The deploy repo (`TrieOH/deploy/thetree`)
+
+```text
+thetree/
+├── compose.yml          # prod stack: postgres, rustfs, identityx, univents, payssage, informd
+├── .env                 # shared secrets (gitignored — server only)
+├── .env.example         # committed, blank values
+├── .identityx.env(.example)    # per-service env, one per backend
+├── .univents.env(.example)
+├── .payssage.env(.example)
+└── .informd.env(.example)
+```
+
+- **Networks**: `internal` (postgres only — not exposed to the host), `caddy-net` (external, shared with infra — the public gateway), `obs-net` (external — telemetry scrapes).
+- **Env handling**: real `.env` files live only on the server. Templates are committed with blank values. **Never commit a snapshot** — `docker compose config` inlines every resolved secret (learned the hard way: a committed snapshot leaked all prod secrets and had to be scrubbed from history).
+
+## Frontends & docs
+
+| What | Trigger | Where it goes |
+| --- | --- | --- |
+| Frontends (`front/*`) | push to `main` touching `front/*` (`deploy-front.yml`) | **Cloudflare Pages** per app via `wrangler-action`; env injected from repo vars/secrets (`VITE_API_URL`, `VITE_AUTH_API_URL`, PostHog keys, auth project id…) |
+| Docs (this site) | push to `main` in `TrieOH/docs` (`deploy-pages.yml`) | **Cloudflare Pages** at `docs.trieoh.com`; `pnpm build` fetches the OpenAPI specs from `OPENAPI_SERVICES` (repo var) |
+| TS SDKs (`lib/ts/*`) | tag `*-sdk-ts/v*` (`publish-ts-sdks.yml`) | **npm** |
+
+## Quality gates before any of this
+
+- `ci.yml` — on PRs, path-filtered per service: lint (golangci-lint) + tests (gotestsum).
+- `trivy-scan.yml` — on PRs, container image vulnerability scan (path-filtered).
+- `frontend-lint-tsc.yml` — lint + type-check the frontends.
+
+## Server ops
+
+- Project dir: `~/deploy/thetree` (owner `trieoh@main`).
+- The nightly **dind-prune** and **forgejo-restart** crons live in the server's crontab, not in git — re-add them when rebuilding the box.
+- Infra services (caddy, forgejo, mox, observability, beszel, ntfy) live in `TrieOH/infra`, not here — see [Infrastructure](/docs/infra).

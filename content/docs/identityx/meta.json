@@ -2,7 +2,8 @@
   "title": "IdentityX",
   "pages": [
     "index",
-    "test",
-    "api"
+    "API",
+    "backend",
+    "frontend"
   ]
 }

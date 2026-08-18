@@ -1,0 +1,54 @@
+---
+title: Coding Conventions
+description: How Univents backend code is written — spec-first, the store, webhooks, realtime.
+icon: CodeXml
+---
+
+## Spec-first development
+
+- `api-spec.yml` is the contract and the single source of truth (every operation, schema, error sentinel).
+- Regenerate bindings after touching it: `just generate-oapi univents` (`internal/openapi/*.gen.go`, not committed).
+- The embedded spec is served at `/docs/openapi.yml` — this site's API reference is that file.
+
+## Feature layout
+
+One directory per feature under `internal/handlers/` (events, editions, ticket_types, products, programs, checkouts, purchases, badges, certifications, signatures, realtime, webhooks). Routes are registered in `internal/app/router.go`; authz goes through the auth resolver — never inline checks in handlers.
+
+## The store: checkout → purchase → webhook
+
+- `POST /editions/{id}/checkout` reserves items and creates the Payssage intent **in one request**; prices are always server-computed from the DB — never trusted from the client.
+- The purchase is the record of truth (`purchases` + `purchase_items`), correlated by `payssage_intent_id`. Statuses flow `pending → approved` from the Payssage webhook, `expired` from a river worker.
+- The webhook receiver (`/webhooks/payssage`) verifies `X-Payssage-Signature` (HMAC over the **exact bytes** POSTed, `PAYSSAGE_WEBHOOK_SECRET`) before touching state. Return 200 to stop retries.
+- Availability is a ledger: `purchase_items` rows are locked `FOR UPDATE` inside the checkout transaction. One active ticket per person per edition — a second checkout 409s.
+
+## Response envelope & errors
+
+- Every response is the `fun.Response` envelope; failures are `AppError` with shared `errx` sentinels.
+- **Owner-only resources return `404`, not `403`** — no existence leak (the whole catalog is public reads).
+- Async work (purchase expiry, badge/cert emissions) goes in river jobs, not in the request path.
+
+## Realtime
+
+- WS frames (`/ws`): `purchase.snapshot` / `intent.updated` / `purchase.confirmed` / `purchase.expired` / `purchase.cancelled` — `{"type", "payload"}`.
+- SSE (`/editions/{id}/store/stream`): snapshot + `event: stock` deltas; numbers are **always recomputed from the DB** — publishers send only item ids, never stale counts.
+- `ws_tokens` are 32-byte random, SHA-256 at rest, 10-min TTL, one-time.
+
+## Profiles boundary
+
+The Univents backend **never reads IdentityX profile data**. Holder names/avatars are derived by the frontend via IdentityX's public profile endpoint. Univents emits only its own data (registration/ticket names, event names, the badge action URL).
+
+## Database
+
+- Schema in `db/`, sqlc queries in `internal/sqlc`, repos in `internal/repos`.
+- Anything multi-row that must be atomic (checkout, emissions) runs in one transaction.
+
+## Tests & quality
+
+- Parity tests in `internal/app` keep the router surface in sync with the spec.
+- `just univents test` (gotestsum), `just univents lint` (golangci-lint).
+
+## Don't
+
+- Don't reimplement HTTP serving/telemetry — boot through `lib/go/httpserver`.
+- Don't trust client-sent prices or stock.
+- Don't return the envelope root as the payload.

@@ -1,0 +1,46 @@
+---
+title: Frontend
+description: The IdentityX frontend app and its generated TypeScript API client.
+icon: MonitorSmartphone
+---
+
+The IdentityX frontend lives in the TheTree monorepo. Two pieces:
+
+| Piece | Where | What it is |
+| --- | --- | --- |
+| App | `front/identityx/` | TanStack Start app (React Router, React Query, Base UI) |
+| API client | `lib/ts/identityx/` | orval-generated client, published as `@trieoh/identityx-api` |
+
+## Stack
+
+- **TanStack Start** — React Router + SSR + React Query; server functions for BFF-ish calls.
+- **Base UI** + Tailwind for components; `@trieoh/ui-base` / `@trieoh/front-core` for shared UI and front conventions.
+- **Generated client** — `lib/ts/identityx/client/` (`endpoints.ts` + `schemas/`) produced by orval from `api/identityx/api-spec.yml`, with TanStack Query hooks.
+
+## Generated client
+
+```text
+lib/ts/identityx/
+├── client/
+│   ├── endpoints.ts        # typed API functions
+│   ├── schemas/            # spec types
+│   └── (react-query hooks)
+└── package.json            # @trieoh/identityx-api
+```
+
+- The `fun.Response` envelope is unwrapped for you: the orval input transformer replaces enveloped responses with their `data` schema, and the runtime mutator (`lib/ts/api-client/src/orval-mutator.ts`) rejects with `ApiError` on failures (envelope available at `.envelope`).
+- Regenerate after any spec change: `pnpm orval` (or `just generate-orval`) — never hand-write endpoint code.
+
+## Run it
+
+```bash
+pnpm --filter @trieoh/identityx-api dev   # generated client workspace pkg
+pnpm --filter identityx dev               # the app (front/identityx)
+```
+
+The app calls `configureApiClient({ baseURL, authBaseURL })` once at startup — see the conventions page.
+
+## Read next
+
+- [Frontend conventions](/docs/identityx/frontend/conventions)
+- [API reference](/docs/identityx/API/system/getHealth)

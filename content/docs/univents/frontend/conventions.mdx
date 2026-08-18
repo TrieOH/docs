@@ -1,0 +1,52 @@
+---
+title: Coding Conventions
+description: How the Univents frontend consumes the API — generated clients, store flows, realtime.
+icon: CodeXml
+---
+
+## Consume the generated client
+
+- All API calls go through `@trieoh/univents-api` (orval-generated from the spec). No hand-written fetch wrappers per endpoint.
+- Regenerate after spec changes: `pnpm orval` — the client is **not** hand-edited.
+- Use the generated TanStack Query hooks; let React Query own caching/retry/invalidation.
+
+## Runtime setup
+
+Configure the shared fetch stack once, at app startup:
+
+```ts
+configureApiClient({
+  baseURL: env.VITE_API_URL,          // → https://api.trieoh.com/univents
+  authBaseURL: env.VITE_AUTH_API_URL, // used for token refresh
+})
+```
+
+## Envelope & errors
+
+- The `fun.Response` envelope is unwrapped at the client layer — you never see it. Success returns the payload directly.
+- Failures reject with `ApiError`: the envelope is in `.envelope`, so error UI reads `error.envelope.error.message` (or the typed code).
+- Public/anonymous routes (catalog browsing, certification verification, store stream): call generated hooks with `{ public: true }`.
+
+## The store flow
+
+- Checkout (`createEditionCheckout`) returns the purchase + Payssage intent; the buyer pays in the Payssage flow (Pix shows the QR; cards tokenize via `@mercadopago/sdk-js`).
+- Track the purchase live:
+  - `GET /ws/token?purchase_id=…` → open `WS /ws` — frames: `purchase.snapshot`, `intent.updated`, `purchase.confirmed`, `purchase.expired`, `purchase.cancelled`.
+  - Or `GET /editions/{id}/store/stream` with `fetch-event-source` (SSE) for stock deltas.
+- Poll nothing: the realtime surfaces replace polling. After a terminal frame, close the socket and refetch the purchase.
+
+## Authentication
+
+- Users authenticate through IdentityX; the JWT's `subject.id` is the purchaser/owner id downstream.
+- Tokens are attached by the shared fetcher; refresh via `authBaseURL`. No manual `localStorage` token stashing.
+
+## Keeping in sync with the spec
+
+- Spec changed? Run `just generate-orval` and let the type errors guide the UI updates.
+- Generated types are the source of truth — don't `as`-cast around them.
+
+## Don't
+
+- Don't call endpoints by URL string — import the generated functions.
+- Don't hand-roll response envelopes or error parsing.
+- Don't render stock/counts from cached payloads forever — follow the realtime deltas.

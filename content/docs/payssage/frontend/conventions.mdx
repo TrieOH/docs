@@ -1,0 +1,55 @@
+---
+title: Coding Conventions
+description: How the Payssage frontend consumes the API — generated clients, intents, webhook plumbing.
+icon: CodeXml
+---
+
+## Consume the generated client
+
+- All API calls go through `@trieoh/payssage-models` (orval-generated from the spec). No hand-written fetch wrappers per endpoint.
+- Regenerate after spec changes: `pnpm orval` — the client is **not** hand-edited.
+- Use the generated TanStack Query hooks; let React Query own caching/retry/invalidation.
+
+## Runtime setup
+
+Configure the shared fetch stack once, at app startup:
+
+```ts
+configureApiClient({
+  baseURL: env.VITE_API_URL,          // → https://api.trieoh.com/payssage
+  authBaseURL: env.VITE_AUTH_API_URL, // used for token refresh
+})
+```
+
+## Envelope & errors
+
+- The `fun.Response` envelope is unwrapped at the client layer — you never see it. Success returns the payload directly.
+- Failures reject with `ApiError`: the envelope is in `.envelope`, so error UI reads `error.envelope.error.message` (or the typed code).
+- Public routes are rare here (the provider callback and provider webhook are not frontend concerns) — but any anonymous call uses `{ public: true }`.
+
+## Payment flows
+
+- **Checkout**: `POST /wallets/{wallet_id}/checkout` with the payment method. Pix returns the QR in `provider_data`; cards charge synchronously (tokenize first via `@mercadopago/sdk-js`).
+- **Status**: reflect intent statuses as-is (`pending | processing | succeeded | cancelled | failed | rejected | refunded`). State changes arrive via webhook → downstream service — don't fabricate transitions client-side.
+- **Test mode**: with `TEST_MODE=true` on the service, `/testmode/intents/create` lets you hard-create an intent with a chosen status for local flows.
+
+## Webhook plumbing (consumers)
+
+- If you receive webhook deliveries from Payssage: verify `X-Payssage-Signature` = hex(HMAC-SHA256(raw body, endpoint secret)) over the **exact bytes** POSTed, return 200 to stop retries.
+- The endpoint secret is returned once at creation — store it in env (`PAYSSAGE_WEBHOOK_SECRET`), never in the client bundle.
+
+## Authentication
+
+- Users authenticate through IdentityX; the JWT's `subject.id` is the owner id for wallet/org scoping.
+- Platform wallet operations are done server-side with the service API key — never ship service keys to the browser.
+
+## Keeping in sync with the spec
+
+- Spec changed? Run `just generate-orval` and let the type errors guide the UI updates.
+- Generated types are the source of truth — don't `as`-cast around them.
+
+## Don't
+
+- Don't call endpoints by URL string — import the generated functions.
+- Don't hand-roll response envelopes or error parsing.
+- Don't render money from client-computed totals — the server computes amounts.

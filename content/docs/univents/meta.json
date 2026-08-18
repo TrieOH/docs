@@ -2,6 +2,8 @@
   "title": "Univents",
   "pages": [
     "index",
-    "api"
+    "API",
+    "backend",
+    "frontend"
   ]
 }

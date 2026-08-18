@@ -1,6 +1,57 @@
 ---
-title: Univents Overview
-description: Introduction to Univents service
+title: Overview
+description: Events, editions, ticketing, products, programs, badges and certifications — plus the store backed by Payssage.
+icon: CalendarDays
 ---
 
-Welcome to the Univents documentation.
+Univents is TrieOH's events service: events and editions (runs), ticket types, products, programs (schedules), registrations, badge and certification templates, signature workflows — and the **store**: purchases paid through Payssage payment intents, with a webhook receiver and realtime surfaces.
+
+## Call it
+
+| Environment | Base URL |
+| --- | --- |
+| Local | `http://localhost:8081` |
+| Prod | `https://api.trieoh.com/univents` (or `https://api.univents.com.br`) |
+
+## Authentication
+
+Bearer JWT issued by IdentityX for the **univents** project. Public (anonymous) reads are allowed for event/edition browsing, products, programs, certification verification, and the store stream.
+
+<Callout type="info" title="404 instead of 403">
+Owner-only operations return `404` for non-owners — there is no existence leak.
+</Callout>
+
+## Key concepts
+
+| Concept | Meaning |
+| --- | --- |
+| Event / Edition | an event owns editions (runs with dates + registration window); editions publish |
+| Ticket type / Product / Program occurrence | the three purchasable item kinds (`item_type`: `ticket` \| `product` \| `program_occurrence`) |
+| Registration / Purchase | materialized rows a purchase owns: `pending` → `confirmed` / `cancelled` / `expired` |
+| Purchase | the store's record of truth (`purchases` + `purchase_items`), correlated by `payssage_intent_id` |
+| Badge / Certification | templates with a `design_data` JSON; participant badges emit on registration confirm |
+| Signature request | token-authenticated signing workflow (HMAC token, not a JWT) |
+
+## Endpoint groups
+
+Browse each group in the sidebar:
+
+| Group | Covers |
+| --- | --- |
+| `events` / `editions` | catalog: create event → payments → editions → publish |
+| `ticket_types` / `products` / `programs` | purchasable items and schedules |
+| `checkouts` / `purchases` | the store: checkout creates a purchase + Payssage intent |
+| `badges` / `certifications` | template design and per-attendee emission |
+| `signatures` | signature requests and fulfillment |
+| `realtime` / `webhooks` | `WS /ws` frames, `SSE /store/stream`, Payssage webhook receiver |
+| `system` | health, spec |
+
+## Buy flow (store)
+
+1. `POST /editions/{id}/checkout` — reserves items and creates the Payssage payment intent in one request. Prices are server-computed from the DB, never trusted from the client.
+2. Payssage delivers a webhook (`/webhooks/payssage`) on payment events; the purchase moves `pending → approved`, registrations confirm, badges emit.
+3. Follow it live: `GET /checkouts/{id}`, `GET /purchases`, `GET /ws/token?purchase_id=…` → `WS /ws`, or `GET /editions/{id}/store/stream` (SSE).
+
+<Callout type="warning" title="Design gotcha">
+Badge/cert `design_data` is rendered at read time from the edition's templates — design changes re-render live and nothing re-emails. The Univents backend never reads IdentityX profile data; holder names come from IdentityX's public profile endpoint.
+</Callout>

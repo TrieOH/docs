@@ -1,6 +1,88 @@
 ---
-title: Payssage Overview
-description: Introduction to Payssage service
+title: Overview
+description: Payments for TrieOH — wallets, sellers, payment intents, provider OAuth, webhooks, test mode.
+icon: CreditCard
 ---
 
-Welcome to the Payssage documentation.
+Payssage is TrieOH's payments service: **wallets** (ownership units with fees and sandbox flags), **sellers/collectors** (provider accounts such as Mercado Pago, connected via OAuth), **intents** (payment attempts), and the **webhook pipeline** that fans provider events out to tenant endpoints with HMAC-signed deliveries.
+
+## Call it
+
+| Environment | Base URL |
+| --- | --- |
+| Local | `http://localhost:8082` |
+| Prod | `https://api.trieoh.com/payssage` (or `https://api.payssage.trieoh.com`) |
+
+## Authentication
+
+| Caller | Scheme | Typical routes |
+| --- | --- | --- |
+| End user | Bearer JWT (IdentityX payssage project) | wallet/intent/org operations |
+| Platform / service | `X-API-Key` (payssage svc key) | wallet create/get/fee, sandbox, webhook endpoints, testmode |
+
+Only `POST /webhooks/{provider}` (the provider calls it) and `GET /providers/{provider}/callback` (browser redirect) are unauthenticated.
+
+## Key concepts
+
+| Concept | Meaning |
+| --- | --- |
+| Wallet | ownership unit: `owner_id`, optional `organization_id`, `sandbox`, `fee_bps` (500 = 5%) |
+| Seller / Collector | provider account bound to a wallet; **created only via the provider OAuth callback** — there is no create-seller API |
+| Intent | one payment attempt: `pending \| processing \| succeeded \| cancelled \| failed \| rejected \| refunded` |
+| Webhook endpoint | per-wallet `{name, url}`; returns a **secret** used to verify `X-Payssage-Signature` on deliveries |
+| Webhook delivery | normalized envelope (below), HMAC-SHA256 of the raw body, retried up to 5× on non-2xx |
+
+## Endpoint groups
+
+Browse each group in the sidebar:
+
+| Group | Covers |
+| --- | --- |
+| `wallets` | create, get, sandbox (PATCH), fee, webhook endpoints |
+| `sellers` / `collectors` | provider accounts after OAuth |
+| `intents` | checkout, get, cancel |
+| `oauth` | Mercado Pago connect/callback |
+| `webhooks` | provider webhook receiver, tenant endpoint management |
+| `testmode` | simulate intents without a real provider |
+| `orgs` / `system` | org-scoped wallets, health, spec |
+
+## Webhook contract
+
+Payssage delivers a normalized envelope — **not** the raw provider payload:
+
+```json
+{
+  "intent_id": "...",
+  "wallet_id": "...",
+  "provider": "mercadopago",
+  "external_id": "<provider_payment_id>",
+  "event_type": "payment.succeeded",
+  "payload": { "...": "raw provider payload" }
+}
+```
+
+Verify `X-Payssage-Signature` = hex(HMAC-SHA256(raw body, endpoint secret)) against the **exact bytes** POSTed. Return 200 to stop retries.
+
+<Callout type="warning" title="Gotchas">
+- `setWalletSandbox` is **PATCH**, not POST (405 otherwise).
+- A seller only exists after a real provider OAuth flow; for local e2e, seed the `sellers` table directly.
+- Test mode requires `TEST_MODE=true` in the payssage env — otherwise `/testmode/*` 503s. `POST /testmode/intents/create` hard-creates an intent with a chosen status (e.g. `succeeded`) so downstream flows observe the webhook without a real provider.
+- The platform wallet is owned by the payssage svc actor — create it with the **service API key**, not a user JWT.
+</Callout>
+
+## Payment providers
+
+Providers plug in as adapters on the shared provider layer — see the per-provider guides:
+
+<Cards>
+  <Card
+    title="Mercado Pago"
+    description="OAuth connect, checkout, webhooks, test mode, card tokens"
+    href="/docs/payssage/Providers/MercadoPago"
+  />
+  <Card
+    title="Stripe"
+    description="Coming soon"
+    href="/docs/payssage/Providers/Stripe"
+  />
+</Cards>

@@ -1,0 +1,44 @@
+---
+title: Frontend
+description: The Payssage frontend app and its generated TypeScript API client.
+icon: MonitorSmartphone
+---
+
+The Payssage frontend lives in the TheTree monorepo. Two pieces:
+
+| Piece | Where | What it is |
+| --- | --- | --- |
+| App | `front/payssage/` | TanStack Start app (React Router, React Query, Base UI) |
+| API client | `lib/ts/payssage/` | orval-generated client, published as `@trieoh/payssage-models` |
+
+## Stack
+
+- **TanStack Start** — React Router + SSR + React Query; server functions for BFF-ish calls.
+- **Base UI** + Tailwind; `@trieoh/ui-base` / `@trieoh/front-core` for shared UI and conventions.
+- **Mercado Pago SDK** (`@mercadopago/sdk-js`) for card tokenization and Pix presentation at checkout.
+
+## Generated client
+
+```text
+lib/ts/payssage/
+├── client/
+│   ├── endpoints.ts        # typed API functions
+│   ├── schemas/            # spec types
+│   └── (react-query hooks)
+└── package.json            # @trieoh/payssage-models
+```
+
+- The `fun.Response` envelope is unwrapped for you (orval input transformer + runtime mutator in `lib/ts/api-client/src/orval-mutator.ts`); failures reject with `ApiError` (envelope at `.envelope`).
+- Regenerate after any spec change: `pnpm orval` — never hand-write endpoint code.
+
+## Run it
+
+```bash
+pnpm --filter @trieoh/payssage-models dev   # generated client workspace pkg
+pnpm --filter payssage dev                  # the app (front/payssage)
+```
+
+## Read next
+
+- [Frontend conventions](/docs/payssage/frontend/conventions)
+- [API reference](/docs/payssage/API/system/getHealth)

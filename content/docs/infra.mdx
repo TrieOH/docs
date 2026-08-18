@@ -1,0 +1,112 @@
+---
+title: Infrastructure
+description: What runs the TrieOH platform — Caddy, Forgejo, Postgres, rustfs, observability, mail, monitoring, notifications.
+icon: Network
+---
+
+One server, plain Docker Compose, no Swarm. Everything lives in `TrieOH/infra` (shared infra) and `TrieOH/deploy/thetree` (the product stack); Caddy fronts it all with TLS.
+
+## Services
+
+| Service | What it is | Where it lives |
+| --- | --- | --- |
+| **Caddy** | reverse proxy + TLS gateway (wildcard `*.trieoh.com`) | `infra/caddy` |
+| **Forgejo** | git + Actions runner (DinD) | `infra/forgejo` |
+| **Mox** | mail (SMTP/IMAP) | `infra/mox` |
+| **Observability** | Grafana + VictoriaMetrics / VictoriaLogs / VictoriaTraces | `infra/observability` |
+| **Beszel** | server monitoring | `infra/beszel` |
+| **ntfy** | push notifications (phone) | `infra/ntfy` |
+| **Postgres** | the single database | `deploy/thetree` |
+| **rustfs** | S3-compatible object storage | `deploy/thetree` |
+| **The four services** | IdentityX, Univents, Payssage, Informd | `deploy/thetree` |
+
+<Mermaid
+  code={`
+flowchart TB
+  subgraph Internet [Internet]
+    DNS["api.trieoh.com, api.identityx.com.br,\\ngit.trieoh.com, grafana.trieoh.com, ..."]
+  end
+  subgraph CaddyNet [caddy-net]
+    CADDY["Caddy\\n:80 / :443, TLS"]
+    IDX["IdentityX"]
+    UNI["Univents"]
+    PAY["Payssage"]
+    INF["Informd"]
+    FORGEJO["Forgejo"]
+    GRAF["Grafana + VM/VL/VT"]
+    RUSTFS["rustfs"]
+    BESZEL["Beszel"]
+    NTFY["ntfy"]
+  end
+  subgraph Internal [internal: postgres-only]
+    PG[("Postgres")]
+  end
+  DNS --> CADDY
+  CADDY --> IDX & UNI & PAY & INF & FORGEJO & GRAF & RUSTFS & BESZEL & NTFY
+  IDX --> PG
+  UNI --> PG
+  PAY --> PG
+  INF --> PG
+`}
+/>
+
+## Networks
+
+| Network | Scope |
+| --- | --- |
+| `caddy-net` | external, shared — anything the public gateway reaches |
+| `internal` | `internal: true` — Postgres only, never exposed to the host |
+| `obs-net` | external — telemetry scrapes (metrics/logs/traces) |
+
+## Caddy (gateway + TLS)
+
+- Wildcard TLS via `/etc/caddy/certs/trieoh.com_origin.pem` (host bind-mount `:ro`); mail hosts use Let's Encrypt from `/etc/letsencrypt`. Certs are **not** in the repo.
+- **API gateway** — `api.trieoh.com` routes path prefixes to each service:
+  `/identityx/*`, `/univents/*`, `/payssage/*`, `/informd/*`.
+- **Direct subdomains** — `api.identityx.com.br`, `api.univents.com.br`, `api.payssage.trieoh.com`, `api.informd.trieoh.com`.
+- **Auth aliases** — `auth.univents.com.br`, `auth.payssage.trieoh.com`, `auth.identityx.com.br`, `auth.informd.trieoh.com` all → IdentityX.
+- **Dashboards** — `grafana.trieoh.com` (Grafana), `metrics/logs/traces.trieoh.com` (Victoria*, behind HTTP basic auth), `beszel.trieoh.com`, `ntfy.trieoh.com`, `git.trieoh.com` (Forgejo).
+- **Storage** — `api.storage.trieoh.cloud` (:9000) and `console.storage.trieoh.cloud` (:9001) → rustfs.
+- **Mail** — `mail.trieoh.com`, `mta-sts.trieoh.com`, `autoconfig.trieoh.com` → Mox.
+- Added a service? Join `caddy-net`, add a block (`reverse_proxy <service>:<port>`), then `just reload-caddy`.
+
+## Forgejo (git + CI)
+
+- Git over HTTPS via Caddy; **SSH** is routed by the host sshd (the `git` user's shell is `forgejo-shell`, `AuthorizedKeysCommand` reads the volume's `authorized_keys`) — it has to exist before Docker comes up (`setup.sh` wires it).
+- **Actions runner** (`forgejo-runner`, DinD) runs the CI/CD workflows (`ci.yml`, `publish.yml`, `trivy-scan.yml`, `deploy-front.yml`, `publish-ts-sdks.yml`). It registers manually once against the instance, then runs as a daemon.
+- The **container registry** (`git.trieoh.com/trieoh/*`) is where Deploy pulls the service images from.
+
+## Observability
+
+Grafana + the Victoria stack, 7-day retention, all bound to `127.0.0.1` on the host (only Caddy reaches them publicly):
+
+| Component | Port (host) | Endpoint |
+| --- | --- | --- |
+| Grafana | `127.0.0.1:3000` | `grafana.trieoh.com` |
+| VictoriaMetrics | `127.0.0.1:8428` | `metrics.trieoh.com` (basic auth) |
+| VictoriaLogs | `127.0.0.1:9428` | `logs.trieoh.com` (basic auth) |
+| VictoriaTraces | `127.0.0.1:10428` | `traces.trieoh.com` (basic auth) |
+
+Every backend boots through the shared harness (`lib/go/httpserver`), which exposes `/metrics`, `/health`, and OpenTelemetry — the scrapers are provisioned via `infra/observability/scrape.yml` and Grafana dashboards live in `infra/observability/dashboards`.
+
+## Host layout
+
+```bash
+~/infra          # shared infra (this repo): caddy, forgejo, mox, observability, beszel, ntfy
+~/deploy/thetree # the product stack: postgres, rustfs, identityx, univents, payssage, informd
+```
+
+- Setup: `just setup` (creates `caddy-net`, starts Caddy + Forgejo, wires git SSH).
+- Edit the Caddyfile? `just reload-caddy`.
+- The nightly dind-prune and forgejo-restart crons live in the server crontab (not in git).
+
+## Ports (prod vs dev)
+
+| Service | Prod | Dev (`docker compose up` in TheTree) |
+| --- | --- | --- |
+| Postgres | internal network only | `5432` |
+| rustfs | via Caddy | `9000`, `9001` |
+| identityx | via Caddy | `8080` (+ `6060` pprof) |
+| univents | via Caddy | `8081` (+ `6061`) |
+| payssage | via Caddy | `8082` (+ `6062`) |
+| informd | via Caddy | `8083` (+ `6063`) |

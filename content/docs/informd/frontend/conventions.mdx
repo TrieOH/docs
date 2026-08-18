@@ -1,0 +1,56 @@
+---
+title: Coding Conventions
+description: How the Informd frontend consumes the API — generated clients, public forms, answer view.
+icon: CodeXml
+---
+
+## Consume the generated client
+
+- All API calls go through `@trieoh/informd-models` (orval-generated from the spec). No hand-written fetch wrappers per endpoint.
+- Regenerate after spec changes: `pnpm orval` — the client is **not** hand-edited.
+- Use the generated TanStack Query hooks; let React Query own caching/retry/invalidation.
+
+## Runtime setup
+
+Configure the shared fetch stack once, at app startup:
+
+```ts
+configureApiClient({
+  baseURL: env.VITE_API_URL,          // → https://api.trieoh.com/informd
+  authBaseURL: env.VITE_AUTH_API_URL, // used for token refresh
+})
+```
+
+## Envelope & errors
+
+- The `fun.Response` envelope is unwrapped at the client layer — you never see it. Success returns the payload directly.
+- Failures reject with `ApiError`: the envelope is in `.envelope`, so error UI reads `error.envelope.error.message` (or the typed code).
+
+## Public forms
+
+- The **public answer view** and **public submission** run without auth:
+  - `GET /forms/{form_id}/asnwerable` — call the generated hook with `{ public: true }`.
+  - `POST /forms/{form_id}/responses` — the submission endpoint, also `{ public: true }`.
+- **Remember the spelling**: the route is `/asnwerable` — it's part of the interface, keep it in URLs, don't "fix" it.
+- Respect server-side lifecycle: a closed form rejects submissions — surface the `AppError` message, don't fake success.
+
+## Builder vs responder views
+
+- **Builder** (namespace admin): manages namespaces, forms lifecycle (draft → open → close → archive → redraft), steps, fields, and option lists (`select` fields) — uses the authenticated routes.
+- **Responder** (public): renders the answer view and submits — uses only the two public routes.
+- Keep the two surfaces separate; the builder never submits through the public endpoint and the responder never sees builder-only data (member lists, counts beyond what's public).
+
+## Authentication
+
+- Admin users authenticate through IdentityX; namespace/forms management requires the JWT. Tokens are attached by the shared fetcher; refresh via `authBaseURL`.
+
+## Keeping in sync with the spec
+
+- Spec changed? Run `just generate-orval` and let the type errors guide the UI updates.
+- Generated types are the source of truth — don't `as`-cast around them.
+
+## Don't
+
+- Don't call endpoints by URL string — import the generated functions.
+- Don't hand-roll response envelopes or error parsing.
+- Don't pre-fill or cache responder submissions beyond a draft — the form's field definitions are the source of truth.

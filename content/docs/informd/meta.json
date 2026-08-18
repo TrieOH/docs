@@ -2,6 +2,8 @@
   "title": "Informd",
   "pages": [
     "index",
-    "api"
+    "API",
+    "backend",
+    "frontend"
   ]
 }

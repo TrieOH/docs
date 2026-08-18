@@ -1,0 +1,45 @@
+---
+title: Frontend
+description: The Univents frontend app and its generated TypeScript API client.
+icon: MonitorSmartphone
+---
+
+The Univents frontend lives in the TheTree monorepo. Two pieces:
+
+| Piece | Where | What it is |
+| --- | --- | --- |
+| App | `front/univents/` | TanStack Start app (React Router, React Query, Base UI) |
+| API client | `lib/ts/univents/` | orval-generated client, published as `@trieoh/univents-api` |
+
+## Stack
+
+- **TanStack Start** — React Router + SSR + React Query; server functions for BFF-ish calls.
+- **Base UI** + Tailwind; `@trieoh/ui-base` / `@trieoh/front-core` for shared UI and conventions.
+- **Realtime**: `@microsoft/fetch-event-source` for the SSE store stream; WebSocket for purchase updates.
+- **Mercado Pago SDK** (`@mercadopago/sdk-js`) for card tokenization at checkout.
+
+## Generated client
+
+```text
+lib/ts/univents/
+├── client/
+│   ├── endpoints.ts        # typed API functions
+│   ├── schemas/            # spec types
+│   └── (react-query hooks)
+└── package.json            # @trieoh/univents-api
+```
+
+- The `fun.Response` envelope is unwrapped for you (orval input transformer + runtime mutator in `lib/ts/api-client/src/orval-mutator.ts`); failures reject with `ApiError` (envelope at `.envelope`).
+- Regenerate after any spec change: `pnpm orval` — never hand-write endpoint code.
+
+## Run it
+
+```bash
+pnpm --filter @trieoh/univents-api dev   # generated client workspace pkg
+pnpm --filter univents dev               # the app (front/univents)
+```
+
+## Read next
+
+- [Frontend conventions](/docs/univents/frontend/conventions)
+- [API reference](/docs/univents/API/system/getHealth)

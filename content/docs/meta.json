@@ -2,7 +2,8 @@
   "title": "Documentation",
   "pages": [
     "index",
-    "test",
+    "deploy",
+    "infra",
     "---",
     "identityx",
     "univents",
