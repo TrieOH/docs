@@ -37,6 +37,9 @@ jobs:
           OPENAPI_SERVICES: ${{ vars.OPENAPI_SERVICES }}
         run: pnpm build
 
+      - name: Remove oversized static asset
+        run: rm -f dist/public/llms-full.txt
+
       - name: Deploy to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
